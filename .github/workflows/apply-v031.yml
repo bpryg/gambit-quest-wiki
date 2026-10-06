@@ -1,0 +1,156 @@
+name: Apply GAMBIT QUEST Wiki v031
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-v031.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply v031 changes
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("index.html")
+          s = p.read_text(encoding="utf-8")
+
+          # Idempotency guard.
+          if '<div class="eyebrow" id="toc">v031</div>' in s:
+              print("v031 already applied")
+              raise SystemExit(0)
+
+          # Version / navigation.
+          s = s.replace('<div class="eyebrow" id="toc">v030</div>', '<div class="eyebrow" id="toc">v031</div>', 1)
+          s = s.replace('GAMBIT QUEST / GUIDE v029', 'GAMBIT QUEST / GUIDE v031', 1)
+          s = s.replace('<a href="#sec-128">未整理・要確認</a>', '<a href="#sec-128">未確認・追加検証</a>', 1)
+
+          # Latest owned-skill total.
+          s = s.replace('最新の完全スキル一覧：182/272 所持（2026-10-06提供テキスト）',
+                        '最新の完全スキル一覧：219/272 所持（2026-10-06提供テキスト）', 1)
+          s = s.replace('<strong>スキル：182 / 272</strong>', '<strong>スキル：219 / 272</strong>', 1)
+          s = s.replace('収集率はスキル約56.3%、武器・防具約48.5%。',
+                        '収集率はスキル約80.5%、武器・防具約48.5%。', 1)
+
+          # Old gacha snapshots: preserve as historical values, but make clear they are not current.
+          s = s.replace('NEW 10種を確認。最新総所持は137/263。',
+                        'NEW 10種を確認。当時の表示は137/263（現在の完全一覧は219/272）。', 1)
+          s = s.replace('このため総所持数は前回確認の137/263を据え置き、次の所持リスト総数画面で更新する。',
+                        '当時は総所持数を137/263で据え置いたが、その後の完全一覧で219/272まで更新済み。', 1)
+          s = s.replace('NEW表示の信頼性に過去記録との矛盾があるため、総所持数は前回の表示確認値137/263を据え置く。',
+                        '当時はNEW表示と過去記録に矛盾があったため137/263を据え置いたが、その後の完全一覧で219/272まで更新済み。', 1)
+
+          # New complete owned list: 182 -> 219, all 37 newly confirmed as owned.
+          newly_owned = [
+              "血の誓い","被弾の記憶","オイル","スロウ","スロウガ","吸魂","天罰","屍兵召喚",
+              "死の宣告","絶対零度","魔力暴走","命の前借り","イノセントガーデン","毒の起爆",
+              "毒の転写","連射","暗殺","ジャンプ","暴食","挙げ句の冒涜","全体化","命の譲渡",
+              "無心の構え","跡を残す","魔力の歌","ストップ","狂乱","ターンアンデッド",
+              "魔力変換","盾の報い","釣り合い","不死の置き土産","死者の力","弱体伝播",
+              "弱者いじめ","速さの代償","召喚の絆"
+          ]
+          for name in newly_owned:
+              pat = re.compile(r'(<td>' + re.escape(name) + r'</td><td>)未所持(</td>)')
+              s, n = pat.subn(r'\1所持\2', s, count=1)
+              if n != 1:
+                  raise RuntimeError(f"Could not update owned status: {name} ({n})")
+
+          # Resolve stale checks using the current complete list/effect text.
+          s = s.replace(
+              '星霊召喚は複数敵への弱点同時攻撃と、別行動時の自動発動を魔王城で確認。水精召喚との上書き競合は要確認。',
+              '星霊召喚は複数敵への弱点同時攻撃と、別行動時の自動発動を魔王城で確認。星霊術師では複数召喚の同時維持も確認済み。水精召喚との個別の同時維持ログは未採取。',
+              1
+          )
+          s = s.replace(
+              'さみだれ突きは単体ボスで4hit集中するかが最大の確認ポイント。銭投げは固定ダメージだが育成用ゴールドを直接削るため、現状は常用優先度低め。',
+              'さみだれ突きは「敵全体／ランダムな敵に4回」と現行効果文で確認。敵が1体だけなら4hitが同じ対象へ集中する仕様になる。銭投げは固定ダメージだが育成用ゴールドを直接削るため、現状は常用優先度低め。',
+              1
+          )
+          s = s.replace(
+              '弱体を消して火力化 / 毒の扱い要検証',
+              '弱体を消して火力化。現行効果文で「毒は数えない」を確認',
+              1
+          )
+
+          # Rewrite the catch-all TODO section so solved items no longer linger.
+          start_marker = '<section class="chapter" data-category="検証・ビルド" id="sec-128">'
+          start = s.index(start_marker)
+          end = s.index('</section>', start) + len('</section>')
+          new_section = '''<section class="chapter" data-category="検証・ビルド" id="sec-128"><div class="label">検証・ビルド</div><h2>未確認・追加検証</h2>
+          <p class="takeaway">古い「未整理・要確認」を整理。図鑑49/49・完全スキル一覧272種・職業画面で解決できた項目は除外し、現在も実測が必要な項目だけ残す。</p>
+          <h3>v031で解決</h3>
+          <ul>
+          <li><strong>デスペルの入手（初出）：銀の宝箱</strong>。銀の宝箱ラインナップ画面で確認。</li>
+          <li><strong>現在のスキル所持：219/272</strong>。完全所持リストを反映し、前回182/272から37種増加。</li>
+          <li><strong>弱体爆発</strong>：対象の弱体を全消費して火力化するが、現行効果文で<strong>毒は数えない</strong>と確定。</li>
+          <li><strong>さみだれ突き</strong>：現行効果文は「敵全体／ランダムな敵に4回」。敵が1体なら4回とも同じ対象に当たる仕様。</li>
+          <li><strong>呪詛</strong>：破滅は重ねがけ<strong>3回ぶんまで</strong>と現行効果文で確定。</li>
+          <li><strong>通常の毒スタック上限</strong>：UR「ヒュドラの毒」が「上限+40（60まで）」なので、通常上限は20と読める。</li>
+          </ul>
+          <h3>戦闘・スキルで追加検証</h3>
+          <ul>
+          <li><strong>魔力吸収 × 星霊召喚</strong>：召喚追撃の弱点ヒットでもMP5%回復が発動するか。発動単位が1行動1回か、弱点ヒットごとか。</li>
+          <li><strong>星霊召喚 × 水精召喚</strong>：星霊術師で複数召喚の同時維持自体は確認済みだが、この2種を同時に維持した個別ログは未採取。</li>
+          <li><strong>毒ダメージ</strong>：通常の毒ダメージ式、敵HP・WAVE・魔など何を参照するか。</li>
+          <li><strong>大呪詛</strong>：「魔×0.6＋対象の弱体の数×10%」の加算位置・端数処理を実測で確認。</li>
+          <li><strong>デスペル</strong>：ボスのため解除成功率は2回目60%、3回目36%…を確認済み。火山W30で行動自体が選ばれなかった件はMP不足か他条件かを切り分ける。</li>
+          <li><strong>職業固有パッシブ</strong>：Lv1基礎値と完全なスケーリング式。Lv18など未取得の中間値も必要に応じて補完。</li>
+          </ul>
+          <h3>周回・報酬で追加検証</h3>
+          <ul>
+          <li>通常WAVEのゴールド報酬が敵構成・敵種・レア敵のどれで決まるか。</li>
+          <li>金のスライムの追加ゴールドが固定+152Gか。</li>
+          <li>WAVEごとの報酬式と、全ダンジョン共通での最適な撤退WAVE。</li>
+          <li>通常周回の魔石合計を同一ラン・同条件で比較する。</li>
+          </ul>
+          <h3>データ収集</h3>
+          <ul>
+          <li>天空の塔の推奨Lv・ステージ画面に表示される弱点属性。</li>
+          <li>各スキルの高Lv時の威力・消費・パッシブ成長値。</li>
+          <li>状態異常の正式仕様と耐性計算。</li>
+          <li>ガチャの排出確率・宝箱ごとの現行ラインナップ変化。</li>
+          </ul>
+          <h3>更新方針</h3>
+          <p>新しいスクリーンショット、戦闘ログ、説明画面などが得られたら逐次追記する。推測と実測は区別して記録する。</p>
+          </section>'''
+          s = s[:start] + new_section + s[end:]
+
+          # Update log.
+          marker = '<tbody><tr><td><strong>v030</strong>'
+          row = '<tbody><tr><td><strong>v031</strong></td><td>2026-10-06</td><td>完全スキル所持リスト219/272を反映（前回182/272から37種増）。デスペルの初出を銀の宝箱で確定。未整理・要確認を再整理し、弱体爆発は毒非対象、さみだれ突きはランダム4回、呪詛は3回ぶんまで、通常毒上限20を現行効果文から整理。</td></tr><tr><td><strong>v030</strong>'
+          if marker not in s:
+              raise RuntimeError("Update-log marker not found")
+          s = s.replace(marker, row, 1)
+
+          # Sanity checks.
+          if s.count('<div class="eyebrow" id="toc">v031</div>') != 1:
+              raise RuntimeError("v031 TOC marker invalid")
+          if '最新の完全スキル一覧：219/272 所持' not in s:
+              raise RuntimeError("219/272 summary missing")
+
+          p.write_text(s, encoding="utf-8")
+          print("Applied v031")
+          PY
+
+      - name: Commit v031
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "bpryg"
+          git config user.email "74494416+bpryg@users.noreply.github.com"
+          git add index.html
+          git commit -m "Update GAMBIT QUEST Wiki to v031"
+          git push
