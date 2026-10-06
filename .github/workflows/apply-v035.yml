@@ -35,7 +35,8 @@ jobs:
 
           def get_section(text, sec_id):
               pat = re.compile(
-                  rf'<section class="chapter"(?=[^>]*id="{re.escape(sec_id)}")[\\s\\S]*?</section>'
+                  rf'<section class="chapter"(?=[^>]*id="{re.escape(sec_id)}").*?</section>',
+                  re.S
               )
               m = pat.search(text)
               if not m:
