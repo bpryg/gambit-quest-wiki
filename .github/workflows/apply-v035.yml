@@ -1,0 +1,220 @@
+name: Apply GAMBIT QUEST Wiki v035
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-v035.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply v035 changes
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("index.html")
+          s = p.read_text(encoding="utf-8")
+
+          # Idempotency guard.
+          if 'GAMBIT QUEST / GUIDE v035' in s:
+              print("v035 already applied")
+              raise SystemExit(0)
+
+          if 'GAMBIT QUEST / GUIDE v034' not in s:
+              raise RuntimeError("Expected v034 base was not found")
+
+          def get_section(text, sec_id):
+              pat = re.compile(
+                  rf'<section class="chapter"(?=[^>]*id="{re.escape(sec_id)}")[\\s\\S]*?</section>'
+              )
+              m = pat.search(text)
+              if not m:
+                  raise RuntimeError(f"Section not found: {sec_id}")
+              return m.group(0), m.start(), m.end()
+
+          def replace_section(text, sec_id, fn):
+              sec, a, b = get_section(text, sec_id)
+              return text[:a] + fn(sec) + text[b:]
+
+          def demote_inner_h2(sec):
+              first = sec.find("<h2>")
+              if first < 0:
+                  return sec
+              head_end = sec.find("</h2>", first)
+              if head_end < 0:
+                  return sec
+              tail = sec[head_end + 5:]
+              tail = tail.replace("<h2>", "<h3>").replace("</h2>", "</h3>")
+              return sec[:head_end + 5] + tail
+
+          def set_label(sec, label):
+              return re.sub(
+                  r'<div class="label">.*?</div>',
+                  f'<div class="label">{label}</div>',
+                  sec, count=1, flags=re.S
+              )
+
+          def set_title(sec, title):
+              return re.sub(
+                  r'<h2>.*?</h2>',
+                  f'<h2>{title}</h2>',
+                  sec, count=1, flags=re.S
+              )
+
+          def set_category(sec, category):
+              return re.sub(
+                  r'data-category="[^"]+"',
+                  f'data-category="{category}"',
+                  sec, count=1
+              )
+
+          # Misclassified role/skill log -> 基本・戦術.
+          def fix_sec52(sec):
+              sec = set_category(sec, "基本・戦術")
+              sec = set_label(sec, "実戦記録")
+              sec = set_title(sec, "実戦記録：役割別に確認できた使用技")
+              return demote_inner_h2(sec)
+
+          s = replace_section(s, "sec-52", fix_sec52)
+
+          # Clean labels / hierarchy in verification-build sections.
+          configs = {
+              "sec-104": ("実測ログ", "実測ログ：竜の火山 W6～W10"),
+              "sec-108": ("ビルド考察", "毒・破滅ビルド（暫定）"),
+              "sec-114": ("ビルド考察", "氷特化ビルド：竜の火山（暫定）"),
+              "spirit-summoner-test": ("職業検証", "星霊術師 Lv20：実戦検証"),
+              "volcano-bossrush-compare": ("比較検証", "竜の火山：毒寄り vs 氷寄り"),
+              "sec-121": ("ビルド考察", "ボス限定・呪詛ビルド：竜の火山（暫定）"),
+              "sec-128": ("検証メモ", "未確認・追加検証リスト"),
+              "gambit-bind-v034": ("ガンビット検証", "天空の塔：呪縛はボス限定が有力"),
+          }
+
+          for sid, (label, title) in configs.items():
+              def fn(sec, label=label, title=title):
+                  sec = set_label(sec, label)
+                  sec = set_title(sec, title)
+                  return demote_inner_h2(sec)
+              s = replace_section(s, sid, fn)
+
+          hub = """<section class="chapter" data-category="検証・ビルド" id="build-lab">
+          <div class="label">検証・ビルド / 案内</div>
+          <h2>検証・ビルド早見表</h2>
+          <p class="takeaway">結論が出ている比較を先に、暫定ビルド・実測ログ・未確認事項を後ろに整理。迷ったらここから目的別に進めます。</p>
+          <div class="quick">
+          <a href="#gambit-bind-v034">天空の塔：呪縛<small>ボス限定運用が最有力 →</small></a>
+          <a href="#volcano-bossrush-compare">竜の火山：毒 vs 氷<small>周回速度の比較を見る →</small></a>
+          <a href="#spirit-summoner-test">星霊術師 Lv20<small>召喚ビルドの実戦検証 →</small></a>
+          <a href="#sec-108">毒・破滅ビルド<small>長期戦向けの暫定考察 →</small></a>
+          <a href="#sec-114">氷特化ビルド<small>弱点重視の火力構成 →</small></a>
+          <a href="#sec-121">ボス限定・呪詛<small>道中とボスで役割を分ける →</small></a>
+          <a href="#sec-104">竜の火山 実測ログ<small>元データを確認する →</small></a>
+          <a href="#sec-128">未確認・追加検証<small>今後調べる項目 →</small></a>
+          </div>
+          <h3>現在の主な結論</h3>
+          <ul>
+          <li><strong>天空の塔：</strong>呪縛は「ボス / 対象が防御↓でない」が最有力。</li>
+          <li><strong>竜の火山：</strong>短時間周回では氷寄りが有力。毒・破滅は高HP・長期戦向けの研究枠。</li>
+          <li><strong>星霊術師：</strong>Lv20で同時召喚+2を確認。召喚軸は実戦火力も高い。</li>
+          </ul>
+          <p class="note">「暫定」は検証途中の考察。「実測ログ」は判断材料となる元記録。「未確認」は今後の検証候補として分離しています。</p>
+          </section>"""
+
+          # Add hub before the first build/log article.
+          _, pos, _ = get_section(s, "sec-104")
+          s = s[:pos] + hub + "\n" + s[pos:]
+
+          # Move the latest tower bind test immediately after the hub.
+          gambit_sec, ga, gb = get_section(s, "gambit-bind-v034")
+          s = s[:ga] + s[gb:]
+          _, ha, hb = get_section(s, "build-lab")
+          s = s[:hb] + "\n" + gambit_sec + s[hb:]
+
+          # Replace the sidebar block.
+          nav_pat = re.compile(
+              r'<div class="nav-label">検証・ビルド</div>.*?<div class="nav-label">取得記録・更新</div>',
+              re.S
+          )
+          nav = """<div class="nav-label">検証・ビルド</div>
+          <a href="#build-lab">検証・ビルド早見表</a>
+          <a href="#gambit-bind-v034">天空の塔：ボス限定呪縛</a>
+          <a href="#volcano-bossrush-compare">竜の火山：毒寄り vs 氷寄り</a>
+          <a href="#spirit-summoner-test">星霊術師 Lv20：実戦検証</a>
+          <a href="#sec-108">毒・破滅ビルド（暫定）</a>
+          <a href="#sec-114">氷特化ビルド（暫定）</a>
+          <a href="#sec-121">ボス限定・呪詛ビルド（暫定）</a>
+          <a href="#sec-104">竜の火山：実測ログ W6～W10</a>
+          <a href="#sec-128">未確認・追加検証</a>
+          <div class="nav-label">取得記録・更新</div>"""
+          s, n = nav_pat.subn(nav, s, count=1)
+          if n != 1:
+              raise RuntimeError(f"Sidebar replacement failed: {n}")
+
+          # Add the moved role/skill log under 基本・戦術.
+          anchor = '<a href="#sec-94">ステータス・戦闘計算</a>'
+          if anchor not in s:
+              raise RuntimeError("Basic-strategy sidebar anchor not found")
+          if 'href="#sec-52">実戦記録：役割別使用技' not in s:
+              s = s.replace(
+                  anchor,
+                  anchor + '<a href="#sec-52">実戦記録：役割別使用技</a>',
+                  1
+              )
+
+          # Version markers.
+          s = s.replace('data-build="v034-20261007-r1"', 'data-build="v035-20261007-r1"', 1)
+          s = s.replace('id="toc">v034<', 'id="toc">v035<', 1)
+          s = s.replace('GAMBIT QUEST / GUIDE v034', 'GAMBIT QUEST / GUIDE v035', 1)
+
+          # Update log.
+          marker = '<tbody><tr><td><strong>v034</strong>'
+          row = (
+              '<tbody><tr><td><strong>v035</strong></td><td>2026-10-07</td>'
+              '<td>「検証・ビルド」を再整理。早見表を追加し、比較検証・職業検証・暫定ビルド・実測ログ・未確認事項を目的別に整理。'
+              '「戦闘ログから確認できた技」は基本・戦術の実戦記録へ移動し、各記事の見出し階層と名称を統一。</td></tr>'
+              '<tr><td><strong>v034</strong>'
+          )
+          if marker not in s:
+              raise RuntimeError("Update-log marker not found")
+          s = s.replace(marker, row, 1)
+
+          # Sanity checks.
+          checks = [
+              'GAMBIT QUEST / GUIDE v035',
+              'id="build-lab"',
+              '検証・ビルド早見表',
+              '実戦記録：役割別に確認できた使用技',
+              '<strong>v035</strong>',
+          ]
+          for item in checks:
+              if item not in s:
+                  raise RuntimeError(f"Sanity check failed: {item}")
+
+          if s.count('id="build-lab"') != 1:
+              raise RuntimeError("build-lab must exist exactly once")
+
+          p.write_text(s, encoding="utf-8")
+          print("Applied v035")
+          PY
+
+      - name: Commit v035
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "bpryg"
+          git config user.email "74494416+bpryg@users.noreply.github.com"
+          git add index.html
+          git commit -m "Update GAMBIT QUEST Wiki to v035"
+          git push
