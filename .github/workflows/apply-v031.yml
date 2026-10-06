@@ -26,13 +26,13 @@ jobs:
           s = p.read_text(encoding="utf-8")
 
           # Idempotency guard.
-          if '<div class="eyebrow" id="toc">v031</div>' in s:
+          if 'GAMBIT QUEST / GUIDE v031' in s:
               print("v031 already applied")
               raise SystemExit(0)
 
           # Version / navigation.
-          s = s.replace('<div class="eyebrow" id="toc">v030</div>', '<div class="eyebrow" id="toc">v031</div>', 1)
-          s = s.replace('GAMBIT QUEST / GUIDE v029', 'GAMBIT QUEST / GUIDE v031', 1)
+          s = s.replace('data-build="v030-20261006-r2"', 'data-build="v031-20261006-r1"', 1)
+          s = s.replace('GAMBIT QUEST / GUIDE v030', 'GAMBIT QUEST / GUIDE v031', 1)
           s = s.replace('<a href="#sec-128">未整理・要確認</a>', '<a href="#sec-128">未確認・追加検証</a>', 1)
 
           # Latest owned-skill total.
@@ -133,8 +133,8 @@ jobs:
           s = s.replace(marker, row, 1)
 
           # Sanity checks.
-          if s.count('<div class="eyebrow" id="toc">v031</div>') != 1:
-              raise RuntimeError("v031 TOC marker invalid")
+          if s.count('GAMBIT QUEST / GUIDE v031') != 1:
+              raise RuntimeError("v031 hero marker invalid")
           if '最新の完全スキル一覧：219/272 所持' not in s:
               raise RuntimeError("219/272 summary missing")
 
