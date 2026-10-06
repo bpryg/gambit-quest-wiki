@@ -1,0 +1,96 @@
+name: Externalize GAMBIT QUEST Wiki images
+on:
+  push:
+    paths:
+      - '.github/workflows/externalize-wiki-images.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Externalize embedded PNG images
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import base64, hashlib, re
+
+          p = Path("index.html")
+          s = p.read_text(encoding="utf-8")
+
+          pat = re.compile(r'data:image/png;base64,([A-Za-z0-9+/=]+)')
+          matches = list(pat.finditer(s))
+          if not matches:
+              print("No embedded PNG images remain; nothing to do.")
+              raise SystemExit(0)
+
+          assets = Path("assets/wiki")
+          assets.mkdir(parents=True, exist_ok=True)
+
+          mapping = {}
+          total_bytes = 0
+          for i, m in enumerate(matches, 1):
+              b64 = m.group(1)
+              raw = base64.b64decode(b64)
+              digest = hashlib.sha256(raw).hexdigest()[:12]
+              name = f"inline-{i:03d}-{digest}.png"
+              rel = f"assets/wiki/{name}"
+              (assets / name).write_bytes(raw)
+              mapping[m.group(0)] = rel
+              total_bytes += len(raw)
+
+          for old, new in mapping.items():
+              s = s.replace(old, new)
+
+          if 'data:image/png;base64,' in s:
+              raise RuntimeError("Embedded PNG remained after replacement")
+
+          s = s.replace('data-build="v035-20261007-r1"', 'data-build="v035-20261007-r2"', 1)
+          p.write_text(s, encoding="utf-8")
+
+          print(f"Externalized {len(matches)} PNG images")
+          print(f"Wrote {total_bytes} image bytes to assets/wiki/")
+          print(f"index.html is now {p.stat().st_size} bytes")
+          PY
+
+      - name: Validate optimized site
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          s = Path("index.html").read_text(encoding="utf-8")
+          refs = re.findall(r'assets/wiki/[^)"'"'"'<> ]+\.png', s)
+          missing = [x for x in refs if not Path(x).exists()]
+          if missing:
+              raise SystemExit(f"Missing asset references: {missing[:5]}")
+          if 'GAMBIT QUEST / GUIDE v035' not in s:
+              raise SystemExit("v035 marker missing")
+          if 'id="build-lab"' not in s:
+              raise SystemExit("build-lab marker missing")
+          if len(refs) < 58:
+              raise SystemExit(f"Expected at least 58 image refs, got {len(refs)}")
+          print(f"Validated {len(refs)} image references")
+          print(f"Final index size: {Path('index.html').stat().st_size} bytes")
+          PY
+
+      - name: Commit optimized assets
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html assets/wiki; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "bpryg"
+          git config user.email "74494416+bpryg@users.noreply.github.com"
+          git add index.html assets/wiki
+          git commit -m "Externalize wiki images for lighter updates"
+          git push
